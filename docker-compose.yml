@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: avia
+      POSTGRES_PASSWORD: avia
+      POSTGRES_DB: avia_travel
+    ports:
+      - "5432:5432"
+    volumes:
+      - avia_pg_data:/var/lib/postgresql/data
+
+volumes:
+  avia_pg_data:

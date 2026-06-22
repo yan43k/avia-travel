@@ -1,0 +1,239 @@
+// Avia Travel — Prisma schema (PostgreSQL; Render / docker-compose / Neon)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  phone        String?
+  role         String    @default("USER")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  adminProfile      Admin?
+  shipments         Shipment[]
+  reviews           Review[]
+  notifications     Notification[]
+  savedRoutes       SavedRoute[]
+  favoriteAddresses FavoriteAddress[]
+  refreshSessions   RefreshSession[]
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  title     String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ShipmentStatus {
+  id          String             @id @default(cuid())
+  code        String             @unique
+  label       String
+  sortOrder   Int                @default(0)
+  shipments   Shipment[]         @relation("ShipmentCurrentStatus")
+  history     TrackingHistory[]
+}
+
+model City {
+  id        String @id @default(cuid())
+  name      String
+  region    String @default("Алтайский край")
+  lat       Float
+  lng       Float
+  routesFrom Route[] @relation("RouteOrigin")
+  routesTo   Route[] @relation("RouteDestination")
+
+  @@unique([name, region])
+  @@index([name])
+}
+
+model Route {
+  id             String    @id @default(cuid())
+  originCityId   String
+  destinationCityId String
+  distanceKm     Float
+  loadPercent    Int       @default(35)
+  estimatedHours Float
+  basePricePerKg Float     @default(120)
+  isActive       Boolean   @default(true)
+  popularity     Int       @default(0)
+
+  originCity      City      @relation("RouteOrigin", fields: [originCityId], references: [id], onDelete: Cascade)
+  destinationCity City      @relation("RouteDestination", fields: [destinationCityId], references: [id], onDelete: Cascade)
+  shipments       Shipment[]
+  busTrips        BusTrip[]
+  savedByUsers    SavedRoute[]
+
+  @@index([originCityId, destinationCityId])
+}
+
+model Bus {
+  id           String    @id @default(cuid())
+  plateNumber  String    @unique
+  model        String?
+  capacityKg   Int       @default(900)
+  isActive     Boolean   @default(true)
+  trips        BusTrip[]
+}
+
+model BusTrip {
+  id                 String   @id @default(cuid())
+  busId              String
+  routeId            String
+  scheduledDeparture DateTime
+  scheduledArrival   DateTime?
+
+  bus     Bus     @relation(fields: [busId], references: [id], onDelete: Cascade)
+  route   Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  shipments Shipment[]
+
+  @@index([routeId])
+  @@index([scheduledDeparture])
+}
+
+model Shipment {
+  id              String        @id @default(cuid())
+  trackingNumber  String        @unique
+  userId          String
+  routeId         String
+  busTripId       String?
+  currentStatusId String
+  weightKg        Float
+  cargoType       String
+  urgency         String        @default("STANDARD")
+  insurance       Boolean       @default(false)
+  priceTotal      Float
+  estimatedDeliveryAt DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  recipientName   String?
+  recipientPhone  String?
+  notes           String?
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  route         Route             @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  busTrip       BusTrip?          @relation(fields: [busTripId], references: [id], onDelete: SetNull)
+  currentStatus ShipmentStatus    @relation("ShipmentCurrentStatus", fields: [currentStatusId], references: [id])
+  tracking      TrackingHistory[]
+  payments      Payment[]
+  reviews       Review[]
+
+  @@index([trackingNumber])
+  @@index([userId])
+}
+
+model TrackingHistory {
+  id          String    @id @default(cuid())
+  shipmentId  String
+  statusId    String?
+  locationCity String?
+  note        String?
+  createdAt   DateTime  @default(now())
+
+  shipment Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  status   ShipmentStatus? @relation(fields: [statusId], references: [id], onDelete: SetNull)
+
+  @@index([shipmentId])
+}
+
+model Payment {
+  id           String          @id @default(cuid())
+  shipmentId   String          @unique
+  amount       Float
+  method       String          @default("ONLINE")
+  status       String          @default("PAID")
+  receiptPath  String?
+  currency     String          @default("RUB")
+  createdAt    DateTime        @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id           String    @id @default(cuid())
+  userId       String?
+  shipmentId   String?
+  authorName   String
+  rating       Int
+  comment      String?
+  published    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  shipment Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+
+  @@index([published])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  payload   String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model SavedRoute {
+  id        String  @id @default(cuid())
+  userId    String
+  routeId   String
+  label     String?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  route  Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, routeId])
+}
+
+model FavoriteAddress {
+  id          String  @id @default(cuid())
+  userId      String
+  label       String
+  city        String
+  addressLine String?
+  postalCode  String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PricingRule {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model RefreshSession {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
